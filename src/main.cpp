@@ -8,14 +8,39 @@ Date: 06/14/2026
 #include <TFT_eSPI.h> // Pins configured in User_Setup.h, not here
 
 // Define 4 analog pins (Strictly on ADC1 to avoid Bluetooth Conflicts)
-#define LEFT_JOYSTICK_VERT 36 // Left Joystick Up/Down
-#define LEFT_JOYSTICK_HORI 39 // Left Joystick Left/Right
+#define LEFT_JOYSTICK_VERT  36 // Left Joystick Up/Down
+#define LEFT_JOYSTICK_HORI  39 // Left Joystick Left/Right
 #define RIGHT_JOYSTICK_VERT 34 // Right Joystick Up/Down
 #define RIGHT_JOYSTICK_HORI 35 // Right Joystick Left/Right
 
-// Define 8 digital pins for switches/buttons
+// Define 8 digital pins for controller switches/buttons
 const int digitalPins[8] = { 17, 18, 25, 26, 27, 32, 19, 16 };
 bool lastButtonStates[8] = {HIGH}; // Default to high
+
+// Define 3 digital pins for rotary encoder assembly
+#define ENCODER_PIN_A 22
+#define ENCODER_PIN_B 23
+#define ENCODER_BTN   4
+
+// HID button indicies for encoder (appended after the 8 physical buttons)
+#define BTN_SCROLL_UP 9
+#define BTN_SCROLL_DOWN 10
+#define BTN_ENCODER_CLICK 11
+
+bool lastEncoderBtnState = HIGH;
+
+// Quadrature decode state
+volatile uint8_t encoderState = 0;
+volatile int8_t encoderDelta = 0; // +1, -1, or 0 per loop check
+
+// Standard quadrature lookup table for a 2-bit gray code encoder
+// Index: (oldA oldB newA newB) -> -1, 0, or +1
+const int8_t encoderTable[16] = {
+   0, -1,  1,  0,
+   1,  0,  0, -1,
+  -1,  0,  0,  1,
+   0,  1,  -1, 0
+};
 
 // Software trim state. One trim offset per axis, in HID units
 int trimX = 0;
@@ -35,6 +60,24 @@ TFT_eSPI tft = TFT_eSPI();
 #define SCREEN_HEIGHT 240
 #define FONT_SIZE 2
 
+// Reads encoder pins and updates encoderState/encoderDelta using the gray code table.
+// Call this frequently (every loop interation) for reliable decoding.
+void pollEncoder()
+{
+  uint8_t a = digitalRead(ENCODER_PIN_A);
+  uint8_t b = digitalRead(ENCODER_PIN_B);
+  uint8_t newState = (a << 1) | b;
+
+  uint8_t tableIndex = (encoderState << 2) | newState;
+  int8_t result = encoderTable[tableIndex];
+
+  if (result != 0) {
+    encoderDelta += result;
+  }
+
+  encoderState = newState;
+}
+
 void setup() {
   Serial.begin(115200); // For debugging diagnostics via USB
   Serial.println("Initializing DX6i Bluetooth Mod...");
@@ -45,6 +88,15 @@ void setup() {
     pinMode(digitalPins[i], INPUT_PULLUP);
     lastButtonStates[i] = digitalRead(digitalPins[i]);
   }
+
+  // Configure encoder pins + integrated click button
+  pinMode(ENCODER_PIN_A, INPUT_PULLUP);
+  pinMode(ENCODER_PIN_B, INPUT_PULLUP);
+  pinMode(ENCODER_BTN, INPUT_PULLUP);
+  lastEncoderBtnState = digitalRead(ENCODER_BTN);
+
+  // Prime initial encoder state so the first pollEncoder() call has a valid baseline
+  encoderState = (digitalRead(ENCODER_PIN_A) << 1) | digitalRead(ENCODER_PIN_B);
 
   // Configure BLE parameters
   BleGamepadConfiguration config;
@@ -76,6 +128,8 @@ void setup() {
 }
 
 void loop() {
+  // Always poll the encoder, even if not connected, so sate doesn't drift/skip
+
   // Only process data if a device is connected over Bluetooth
   if (bleGamepad.isConnected()) {
     bool stateChanged = false;
@@ -96,6 +150,37 @@ void loop() {
           bleGamepad.release(i + 1);
         }
       }
+    }
+
+    // Process encoder click (separate from rotation)
+    bool currentEncoderBtnState = digitalRead(ENCODER_BTN);
+    if (currentEncoderBtnState != lastEncoderBtnState) {
+      lastEncoderBtnState = currentEncoderBtnState;
+      stateChanged = true;
+
+      if (currentEncoderBtnState == LOW) {
+        bleGamepad.press(BTN_ENCODER_CLICK);
+      } else {
+        bleGamepad.release(BTN_ENCODER_CLICK);
+      }
+    }
+
+    // Process encoder rotation as discrete scroll pulses
+    // Each detent fires a brief press+release on the relevant scroll button
+    if (encoderDelta > 0) {
+      bleGamepad.press(BTN_SCROLL_UP);
+      bleGamepad.sendReport();
+      delay(5);
+      bleGamepad.release(BTN_SCROLL_UP);
+      encoderDelta--;
+      stateChanged = true;
+    } else if (encoderDelta < 0) {
+      bleGamepad.press(BTN_SCROLL_DOWN);
+      bleGamepad.sendReport();
+      delay(5);
+      bleGamepad.release(BTN_SCROLL_DOWN);
+      encoderDelta++;
+      stateChanged = true;
     }
 
     // Process gimbal potentiometers
