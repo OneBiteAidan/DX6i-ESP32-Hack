@@ -40,7 +40,7 @@ void setup() {
   Serial.println("Initializing DX6i Bluetooth Mod...");
 
   // Configure digital switch pins
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < 8; i++) {
     // Uses internal chip resistors so switches don't float when open
     pinMode(digitalPins[i], INPUT_PULLUP);
     lastButtonStates[i] = digitalRead(digitalPins[i]);
@@ -49,7 +49,7 @@ void setup() {
   // Configure BLE parameters
   BleGamepadConfiguration config;
   config.setAutoReport(false); // Manually push packets for zero latency
-  config.setButtonCount(16);
+  config.setButtonCount(8);
   config.setHatSwitchCount(0); // Disable D-pad hat switches
 
   // Enable 4 analog axes (X, Y, Z, Rz)
@@ -81,7 +81,7 @@ void loop() {
     bool stateChanged = false;
 
     // Process digital switches
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 8; i++) {
       bool currentState = digitalRead(digitalPins[i]);
 
       // Look for any switch transitions
