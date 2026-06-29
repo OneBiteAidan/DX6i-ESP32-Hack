@@ -14,7 +14,7 @@ Date: 06/14/2026
 #define RIGHT_JOYSTICK_HORI 35 // Right Joystick Left/Right
 
 // Define 8 digital pins for switches/buttons
-const int digitalPins[8] = { 13, 14, 25, 26, 27, 32, 33, 16 };
+const int digitalPins[8] = { 17, 18, 25, 26, 27, 32, 19, 16 };
 bool lastButtonStates[8] = {HIGH}; // Default to high
 
 // Software trim state. One trim offset per axis, in HID units
@@ -28,6 +28,12 @@ const int TRIM_MAX = 4096;
 // Create BLE gamepad instance w/ custom broadcast identifiers
 BleGamepad bleGamepad("Spektrum DX6i BLE", "Custom RC", 100);
 
+// Create TFT display instance
+TFT_eSPI tft = TFT_eSPI();
+
+#define SCREEN_WIDTH 320
+#define SCREEN_HEIGHT 240
+#define FONT_SIZE 2
 
 void setup() {
   Serial.begin(115200); // For debugging diagnostics via USB
@@ -52,6 +58,21 @@ void setup() {
   // Start bluetooth servicer
   bleGamepad.begin(&config);
   Serial.println("Bluetooth Broadcasting: 'Spektrum DX6i BLE' is ready to pair!");
+
+  // Start the TFT display
+  tft.init();
+  // Set the TFT display rotation in landscape mode
+  tft.setRotation(3);
+
+  // Clear the screen before writing to it
+  tft.fillScreen(TFT_WHITE);
+  tft.setTextColor(TFT_BLACK, TFT_WHITE);
+
+  // Set the X and Y coordinates for center of display
+  int centerX = SCREEN_WIDTH / 2;
+  int centerY = SCREEN_HEIGHT / 2;
+
+  tft.drawCentreString("Hello, world!", centerX, 30, FONT_SIZE);
 }
 
 void loop() {
